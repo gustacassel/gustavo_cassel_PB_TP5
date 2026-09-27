@@ -1,5 +1,11 @@
 name: library
 
+x-app-healthcheck: &app-healthcheck
+  interval: 10s
+  timeout: 5s
+  retries: 12
+  start_period: 30s
+
 services:
   rabbitmq:
     image: rabbitmq:4-management
@@ -55,6 +61,88 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
+
+  library-api:
+    build: ./library-api
+    image: library-api:latest
+    container_name: library-api
+    environment:
+      DB_URL: jdbc:postgresql://library-db:5432/librarydb
+      DB_USER: ${LIBRARY_DB_USER:-library}
+      DB_PASSWORD: ${LIBRARY_DB_PASSWORD:-library}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USER: ${RABBITMQ_USER:-library}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-library}
+      SHOW_SQL: "false"
+      H2_CONSOLE: "false"
+    depends_on:
+      library-db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8080/actuator/health/readiness"]
+      <<: *app-healthcheck
+    restart: unless-stopped
+
+  students-api:
+    build: ./students-api
+    image: students-api:latest
+    container_name: students-api
+    environment:
+      DB_URL: jdbc:postgresql://students-db:5432/studentsdb
+      DB_USER: ${STUDENTS_DB_USER:-students}
+      DB_PASSWORD: ${STUDENTS_DB_PASSWORD:-students}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USER: ${RABBITMQ_USER:-library}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-library}
+      SHOW_SQL: "false"
+      H2_CONSOLE: "false"
+    depends_on:
+      students-db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      # a library-api cria a fila library.students; assim os alunos iniciais nao se perdem
+      library-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8081/actuator/health/readiness"]
+      <<: *app-healthcheck
+    restart: unless-stopped
+
+  frontend:
+    build: ./library-frontend
+    image: library-frontend:latest
+    container_name: library-frontend
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  api-gateway:
+    build: ./api-gateway
+    image: api-gateway:latest
+    container_name: api-gateway
+    ports:
+      - "8000:8000" # unica porta de entrada do sistema
+    environment:
+      LIBRARY_API_URL: http://library-api:8080
+      STUDENTS_API_URL: http://students-api:8081
+      FRONTEND_URL: http://frontend:80
+    depends_on:
+      library-api:
+        condition: service_healthy
+      students-api:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8000/actuator/health/readiness"]
+      <<: *app-healthcheck
     restart: unless-stopped
 
 volumes:
