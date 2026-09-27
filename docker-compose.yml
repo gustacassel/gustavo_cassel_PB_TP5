@@ -21,5 +21,43 @@ services:
       retries: 5
     restart: unless-stopped
 
+  library-db:
+    image: postgres:17-alpine
+    container_name: library-db
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: librarydb
+      POSTGRES_USER: ${LIBRARY_DB_USER:-library}
+      POSTGRES_PASSWORD: ${LIBRARY_DB_PASSWORD:-library}
+    volumes:
+      - library-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  students-db:
+    image: postgres:17-alpine
+    container_name: students-db
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_DB: studentsdb
+      POSTGRES_USER: ${STUDENTS_DB_USER:-students}
+      POSTGRES_PASSWORD: ${STUDENTS_DB_PASSWORD:-students}
+    volumes:
+      - students-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
 volumes:
   rabbitmq-data:
+  library-db-data:
+  students-db-data:
