@@ -17,14 +17,14 @@ const STATE_LABELS: Record<ServiceState, string> = {
     offline: "offline",
 }
 
-function ServiceIndicator({ name, port, state }: { name: string; port: number; state: ServiceState }) {
+function ServiceIndicator({ name, route, state }: { name: string; route: string; state: ServiceState }) {
     return (
         <div className="service-indicator">
             <span className={`status-dot status-${state}`} />
             <div className="service-indicator-text">
                 <span className="service-name">{name}</span>
                 <span className="service-meta">
-                    :{port} · {STATE_LABELS[state]}
+                    {route} · {STATE_LABELS[state]}
                 </span>
             </div>
         </div>
@@ -44,7 +44,7 @@ export default function AppLayout() {
                     </span>
                     <div>
                         <span className="brand-name">Biblioteca Aurora</span>
-                        <span className="brand-tag">Projeto de Bloco · TP4</span>
+                        <span className="brand-tag">Projeto de Bloco · TP5</span>
                     </div>
                 </div>
 
@@ -68,9 +68,9 @@ export default function AppLayout() {
                 </button>
 
                 <div className="sidebar-services">
-                    <span className="sidebar-section-title">Serviços</span>
-                    <ServiceIndicator name="library-api" port={8080} state={status.library} />
-                    <ServiceIndicator name="students-api" port={8081} state={status.students} />
+                    <span className="sidebar-section-title">Serviços · via api-gateway</span>
+                    <ServiceIndicator name="library-api" route="/library-api" state={status.library} />
+                    <ServiceIndicator name="students-api" route="/students-api" state={status.students} />
                     <div className="service-indicator broker">
                         <i className="bi bi-broadcast" />
                         <div className="service-indicator-text">

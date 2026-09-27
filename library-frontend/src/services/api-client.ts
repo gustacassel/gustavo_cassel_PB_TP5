@@ -1,8 +1,8 @@
 import { StatusCodes } from "http-status-codes";
 
-// O front-end fala com dois back-ends: a biblioteca e o microsserviço.
-export const LIBRARY_API_URL = "http://localhost:8080";
-export const STUDENTS_API_URL = "http://localhost:8081";
+// Tudo passa pelo api-gateway, que encaminha cada prefixo para o serviço certo.
+export const LIBRARY_API_URL = "/library-api";
+export const STUDENTS_API_URL = "/students-api";
 
 type RequestOptions = Omit<RequestInit, "body"> & { body?: unknown };
 

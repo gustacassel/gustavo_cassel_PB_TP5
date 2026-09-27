@@ -73,7 +73,7 @@ export default function CourseList() {
             setError(null)
         } catch (err) {
             setError(
-                `${errorMessage(err, "Não foi possível carregar os cursos.")} - verifique se a students-api está no ar na porta 8081.`,
+                `${errorMessage(err, "Não foi possível carregar os cursos.")} - verifique se a students-api está no ar.`,
             )
         } finally {
             setIsLoading(false)
@@ -209,7 +209,7 @@ export default function CourseList() {
                 <div className="data-card-header">
                     <div>
                         <h2 className="data-card-title">Catálogo de cursos</h2>
-                        <span className="data-card-subtitle">Servido pela students-api na porta 8081</span>
+                        <span className="data-card-subtitle">Servido pela students-api, rota /students-api do gateway</span>
                     </div>
                     {isLoading ? (
                         <Spinner animation="border" size="sm" />

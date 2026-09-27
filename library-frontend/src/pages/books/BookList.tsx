@@ -158,7 +158,7 @@ export default function BookList() {
                 <div className="data-card-header">
                     <div>
                         <h2 className="data-card-title">Catálogo</h2>
-                        <span className="data-card-subtitle">Servido pela library-api na porta 8080</span>
+                        <span className="data-card-subtitle">Servido pela library-api, rota /library-api do gateway</span>
                     </div>
                     {isLoading ? (
                         <Spinner animation="border" size="sm" />
