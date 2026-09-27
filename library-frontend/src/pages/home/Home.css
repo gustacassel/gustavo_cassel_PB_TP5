@@ -1,0 +1,77 @@
+.replica-summary {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    padding: 1rem;
+    margin-bottom: 1.25rem;
+    border-radius: 0.85rem;
+    background: rgba(var(--aurora-primary-rgb), 0.06);
+}
+
+.replica-label {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--aurora-muted);
+    font-weight: 500;
+}
+
+.replica-value {
+    display: block;
+    font-size: 1.5rem;
+    font-weight: 700;
+}
+
+.replica-value.small-value {
+    font-size: 0.95rem;
+    padding-top: 0.45rem;
+}
+
+.event-flow {
+    padding: 0.9rem 0;
+    border-top: 1px dashed var(--aurora-border);
+}
+
+.event-flow-line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.flow-node {
+    padding: 0.3rem 0.7rem;
+    border-radius: 0.6rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    background: var(--aurora-chip);
+}
+
+.flow-node.exchange {
+    color: var(--aurora-accent-text);
+    background: rgba(var(--aurora-accent-rgb), 0.2);
+}
+
+.flow-arrow {
+    color: var(--aurora-muted);
+}
+
+.flow-keys {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    margin-top: 0.6rem;
+}
+
+.flow-keys code {
+    font-size: 0.72rem;
+    padding: 0.15rem 0.45rem;
+    border-radius: 0.4rem;
+    color: var(--aurora-primary);
+    background: rgba(var(--aurora-primary-rgb), 0.08);
+}
+
+.flow-effect {
+    margin-top: 0.5rem;
+    font-size: 0.82rem;
+    color: var(--aurora-muted);
+}

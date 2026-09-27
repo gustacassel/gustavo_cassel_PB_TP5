@@ -1,0 +1,25 @@
+name: library
+
+services:
+  rabbitmq:
+    image: rabbitmq:4-management
+    container_name: library-rabbitmq
+    hostname: library-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672" # painel
+    environment:
+      # o guest so aceita conexao de dentro do container
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-library}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-library}
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  rabbitmq-data:
