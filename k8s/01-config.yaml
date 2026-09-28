@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: biblioteca
+data:
+  RABBITMQ_HOST: rabbitmq
+  RABBITMQ_PORT: "5672"
+  SPRING_PROFILES_ACTIVE: loki
+  LOKI_URL: http://loki:3100/loki/api/v1/push
+  ZIPKIN_ENABLED: "true"
+  ZIPKIN_URL: http://zipkin:9411/api/v2/spans
+  SHOW_SQL: "false"
+  H2_CONSOLE: "false"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: app-secrets
+  namespace: biblioteca
+type: Opaque
+stringData:
+  RABBITMQ_USER: library
+  RABBITMQ_PASSWORD: library
+  LIBRARY_DB_USER: library
+  LIBRARY_DB_PASSWORD: library
+  STUDENTS_DB_USER: students
+  STUDENTS_DB_PASSWORD: students

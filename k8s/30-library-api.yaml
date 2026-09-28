@@ -1,0 +1,91 @@
+# 2 replicas: as duas consomem a fila library.students (competing consumers)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: library-api
+  namespace: biblioteca
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: library-api
+  template:
+    metadata:
+      labels:
+        app: library-api
+    spec:
+      # sem isso o Kubernetes injeta RABBITMQ_PORT=tcp://... e sobrescreve a porta da aplicacao
+      enableServiceLinks: false
+      initContainers:
+        - name: espera-library-db
+          image: busybox:1.37
+          command: ["sh", "-c", "until nc -z library-db 5432; do echo aguardando library-db; sleep 2; done"]
+        - name: espera-rabbitmq
+          image: busybox:1.37
+          command: ["sh", "-c", "until nc -z rabbitmq 5672; do echo aguardando rabbitmq; sleep 2; done"]
+      containers:
+        - name: library-api
+          image: ghcr.io/gustacassel/library-api:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: app-config
+          env:
+            - name: DB_URL
+              value: jdbc:postgresql://library-db:5432/librarydb
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: LIBRARY_DB_USER
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: LIBRARY_DB_PASSWORD
+            - name: RABBITMQ_USER
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: RABBITMQ_USER
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: RABBITMQ_PASSWORD
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            periodSeconds: 5
+            failureThreshold: 36
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8080
+            periodSeconds: 5
+          resources:
+            requests:
+              memory: 384Mi
+              cpu: 200m
+            limits:
+              memory: 768Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: library-api
+  namespace: biblioteca
+spec:
+  selector:
+    app: library-api
+  ports:
+    - port: 8080
+      targetPort: 8080

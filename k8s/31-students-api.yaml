@@ -1,0 +1,94 @@
+# espera a library-api porque e ela que cria a fila library.students
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: students-api
+  namespace: biblioteca
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: students-api
+  template:
+    metadata:
+      labels:
+        app: students-api
+    spec:
+      # sem isso o Kubernetes injeta RABBITMQ_PORT=tcp://... e sobrescreve a porta da aplicacao
+      enableServiceLinks: false
+      initContainers:
+        - name: espera-students-db
+          image: busybox:1.37
+          command: ["sh", "-c", "until nc -z students-db 5432; do echo aguardando students-db; sleep 2; done"]
+        - name: espera-rabbitmq
+          image: busybox:1.37
+          command: ["sh", "-c", "until nc -z rabbitmq 5672; do echo aguardando rabbitmq; sleep 2; done"]
+        - name: espera-library-api
+          image: busybox:1.37
+          command: ["sh", "-c", "until wget -qO- http://library-api:8080/actuator/health/readiness; do echo aguardando library-api; sleep 3; done"]
+      containers:
+        - name: students-api
+          image: ghcr.io/gustacassel/students-api:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8081
+          envFrom:
+            - configMapRef:
+                name: app-config
+          env:
+            - name: DB_URL
+              value: jdbc:postgresql://students-db:5432/studentsdb
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: STUDENTS_DB_USER
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: STUDENTS_DB_PASSWORD
+            - name: RABBITMQ_USER
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: RABBITMQ_USER
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: RABBITMQ_PASSWORD
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8081
+            periodSeconds: 5
+            failureThreshold: 36
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8081
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8081
+            periodSeconds: 5
+          resources:
+            requests:
+              memory: 384Mi
+              cpu: 200m
+            limits:
+              memory: 768Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: students-api
+  namespace: biblioteca
+spec:
+  selector:
+    app: students-api
+  ports:
+    - port: 8081
+      targetPort: 8081
