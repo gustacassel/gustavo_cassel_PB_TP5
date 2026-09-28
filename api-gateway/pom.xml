@@ -16,6 +16,7 @@
 
     <properties>
         <java.version>21</java.version>
+        <loki4j.version>2.0.1</loki4j.version>
         <spring-cloud.version>2025.1.2</spring-cloud.version>
     </properties>
 
@@ -27,6 +28,20 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <!-- observabilidade: tracing (Zipkin) e logs centralizados (Loki) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-zipkin</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-micrometer-tracing-brave</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.github.loki4j</groupId>
+            <artifactId>loki-logback-appender</artifactId>
+            <version>${loki4j.version}</version>
         </dependency>
 
         <dependency>

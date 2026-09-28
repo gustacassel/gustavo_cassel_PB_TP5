@@ -1,4 +1,10 @@
-name: library
+name: biblioteca
+
+x-observability: &observability
+  SPRING_PROFILES_ACTIVE: loki
+  LOKI_URL: http://loki:3100/loki/api/v1/push
+  ZIPKIN_ENABLED: "true"
+  ZIPKIN_URL: http://zipkin:9411/api/v2/spans
 
 x-app-healthcheck: &app-healthcheck
   interval: 10s
@@ -76,6 +82,7 @@ services:
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-library}
       SHOW_SQL: "false"
       H2_CONSOLE: "false"
+      <<: *observability
     depends_on:
       library-db:
         condition: service_healthy
@@ -99,6 +106,7 @@ services:
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-library}
       SHOW_SQL: "false"
       H2_CONSOLE: "false"
+      <<: *observability
     depends_on:
       students-db:
         condition: service_healthy
@@ -133,6 +141,7 @@ services:
       LIBRARY_API_URL: http://library-api:8080
       STUDENTS_API_URL: http://students-api:8081
       FRONTEND_URL: http://frontend:80
+      <<: *observability
     depends_on:
       library-api:
         condition: service_healthy
@@ -145,7 +154,43 @@ services:
       <<: *app-healthcheck
     restart: unless-stopped
 
+  zipkin:
+    image: openzipkin/zipkin:3
+    container_name: zipkin
+    ports:
+      - "9411:9411" # interface dos traces
+    restart: unless-stopped
+
+  loki:
+    image: grafana/loki:3.5.5
+    container_name: loki
+    command: -config.file=/etc/loki/local-config.yaml
+    ports:
+      - "3100:3100"
+    volumes:
+      - loki-data:/loki
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:12.2.0
+    container_name: grafana
+    ports:
+      - "3000:3000" # logs (Loki) e traces (Zipkin) em uma tela so
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/biblioteca-logs.json
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - loki
+      - zipkin
+    restart: unless-stopped
+
 volumes:
   rabbitmq-data:
   library-db-data:
   students-db-data:
+  loki-data:
