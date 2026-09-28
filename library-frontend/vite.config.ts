@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import plugin from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
@@ -14,5 +15,9 @@ export default defineConfig({
             "/library-api": gateway,
             "/students-api": gateway,
         },
-    }
+    },
+    test: {
+        environment: "jsdom",
+        setupFiles: "./src/test/setup.ts",
+    },
 })

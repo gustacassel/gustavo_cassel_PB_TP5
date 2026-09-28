@@ -20,7 +20,7 @@ export default function StatCard({ label, value, icon, tone = "primary", hint, i
             </span>
             <div className="stat-body">
                 <span className="stat-label">{label}</span>
-                <span className="stat-value">{isLoading ? <Spinner animation="border" size="sm" /> : value}</span>
+                <span className="stat-value">{isLoading ? <Spinner animation="border" size="sm" role="status" aria-label="Carregando" /> : value}</span>
                 {hint && <span className="stat-hint">{hint}</span>}
             </div>
         </div>
