@@ -6,6 +6,7 @@ API REST de gerenciamento de biblioteca desenvolvida na disciplina **Engenharia 
 - **TP2** - Camada de persistência real com **JPA + Spring Data**: mapeamento objeto-relacional, repositórios com consultas derivadas e `@Query`, **histórico de mudanças dos dados (auditoria)** e testes automatizados da camada de persistência.
 - **TP3** - Extração do domínio de estudantes para um **microsserviço** ([students-api](../students-api)), integrado via Spring Cloud OpenFeign com circuit breaker.
 - **TP4** - O Feign foi removido. A `library-api` passou a **consumir eventos de aluno** do RabbitMQ para manter uma **cópia local** dos estudantes e a **publicar eventos de empréstimo** para a `students-api`.
+- **TP5** - PostgreSQL, Actuator, imagem Docker, rastreamento distribuído (Zipkin) e logs centralizados (Loki). Acessada pelo `api-gateway` na rota `/library-api/**`.
 
 ## Tecnologias
 
@@ -16,7 +17,11 @@ API REST de gerenciamento de biblioteca desenvolvida na disciplina **Engenharia 
 | Spring Data JPA + Hibernate | Mapeamento objeto-relacional e repositórios |
 | **Spring AMQP (`spring-boot-starter-amqp`)** | Publicação e consumo de eventos no RabbitMQ |
 | Bean Validation (Jakarta) | Validação dos payloads de entrada |
-| H2 Database | Banco relacional em memória |
+| PostgreSQL 17 | Banco `librarydb` no Docker e no Kubernetes |
+| H2 Database | Banco em memória para testes e execução local rápida |
+| Spring Boot Actuator | Health, liveness e readiness |
+| Micrometer Tracing + Zipkin | Rastreamento distribuído (inclusive através do RabbitMQ) |
+| Loki4j (Logback) | Envio dos logs para o Loki |
 | Lombok | Redução de boilerplate (`@Data`, construtores) |
 | JUnit 5 + AssertJ + Mockito | Testes automatizados (`@DataJpaTest`, `@SpringBootTest`) |
 
@@ -36,7 +41,7 @@ Controller  →  Service  →  Repository  →  Banco de dados (H2)
 
 ```mermaid
 flowchart LR
-    FE[React Frontend<br/>:5173]
+    FE[api-gateway<br/>:8000]
 
     subgraph L["library-api :8080"]
         C[Controllers<br/>Book / Loan / History / Integration]
@@ -49,7 +54,7 @@ flowchart LR
         S --> PUBL
     end
 
-    FE -->|livros, empréstimos| C
+    FE -->|/library-api/**| C
     R --> DB[(H2 librarydb)]
     Q1[["fila library.students<br/>(student.*)"]] --> LST
     PUBL --> X2{{"exchange library.events<br/>(loan.*)"}}
@@ -184,7 +189,7 @@ Duas camadas complementares de rastreabilidade:
 | `GET /api/history/{entidade}` | Histórico de uma entidade (`BOOK`, `LOAN`) |
 | `GET /api/history/{entidade}/{id}` | Histórico de um registro específico |
 
-O histórico de `STUDENT` fica na `students-api` (`GET http://localhost:8081/api/history/STUDENT`). Cada serviço audita apenas o que é seu.
+O histórico de `STUDENT` fica na `students-api` (`GET http://localhost:8000/students-api/api/history/STUDENT`). Cada serviço audita apenas o que é seu.
 
 ## Repositórios Spring Data - exemplos de uso
 
@@ -265,63 +270,78 @@ Somente leitura. A `library-api` não é dona desses dados; escrita de aluno vai
 
 ```bash
 # 1. Os alunos cadastrados na students-api chegam por evento
-curl http://localhost:8080/api/integration/students/health
+curl http://localhost:8000/library-api/api/integration/students/health
 # {"source":"students.events","studentCount":4,"lastEventAt":"..."}
 
 # 2. Cadastrar livro e criar empréstimo (validado na cópia local)
-curl -X POST http://localhost:8080/api/books -H "Content-Type: application/json" \
+curl -X POST http://localhost:8000/library-api/api/books -H "Content-Type: application/json" \
   -d '{"title":"Clean Architecture","author":"Robert C. Martin","isbn":"9780134494166","publicationYear":2017}'
-curl -X POST http://localhost:8080/api/loans -H "Content-Type: application/json" -d '{"bookId":1,"studentId":1}'
+curl -X POST http://localhost:8000/library-api/api/loans -H "Content-Type: application/json" -d '{"bookId":1,"studentId":1}'
 
 # 3. Devolver e consultar o histórico local
-curl -X PUT http://localhost:8080/api/loans/1/return
-curl http://localhost:8080/api/history/LOAN/1
+curl -X PUT http://localhost:8000/library-api/api/loans/1/return
+curl http://localhost:8000/library-api/api/history/LOAN/1
 ```
 
 Cenários de erro e de falha:
 
 ```bash
 # Aluno trancado -> 409 (validado localmente)
-curl -X POST http://localhost:8080/api/loans -H "Content-Type: application/json" -d '{"bookId":1,"studentId":4}'
+curl -X POST http://localhost:8000/library-api/api/loans -H "Content-Type: application/json" -d '{"bookId":1,"studentId":4}'
 # {"status":409,"message":"O estudante 'Pedro Santos' esta com situacao TRANCADO e nao pode pegar livros emprestados"}
 
 # Aluno que não está na cópia local -> 409
-curl -X POST http://localhost:8080/api/loans -H "Content-Type: application/json" -d '{"bookId":1,"studentId":999}'
+curl -X POST http://localhost:8000/library-api/api/loans -H "Content-Type: application/json" -d '{"bookId":1,"studentId":999}'
 # {"status":409,"message":"Estudante 999 nao encontrado"}
 
 # Livro com empréstimo ativo -> 409
-curl -X DELETE http://localhost:8080/api/books/1
+curl -X DELETE http://localhost:8000/library-api/api/books/1
 
 # Com a students-api DERRUBADA o empréstimo continua funcionando (no TP3 era 503)
-curl -X POST http://localhost:8080/api/loans -H "Content-Type: application/json" -d '{"bookId":2,"studentId":2}'
+curl -X POST http://localhost:8000/library-api/api/loans -H "Content-Type: application/json" -d '{"bookId":2,"studentId":2}'
 ```
 
 ## Banco de dados
 
-H2 em memória, configurado em [`application.properties`](src/main/resources/application.properties). O Hibernate cria/atualiza as tabelas a partir das entidades (`spring.jpa.hibernate.ddl-auto=update`) e o SQL executado é exibido no console (`show-sql=true`).
+O banco é definido por variáveis de ambiente, com o H2 em memória como padrão:
 
-Console web do H2: `http://localhost:8080/h2-console` (JDBC URL `jdbc:h2:mem:librarydb`, usuário `sa`, senha em branco).
+| Variável | Padrão (local e testes) | Docker / Kubernetes |
+|---|---|---|
+| `DB_URL` | `jdbc:h2:mem:librarydb` | `jdbc:postgresql://library-db:5432/librarydb` |
+| `DB_USER` / `DB_PASSWORD` | `sa` / vazio | usuário e senha do PostgreSQL |
+| `SHOW_SQL` | `true` | `false` |
+| `H2_CONSOLE` | `true` (`http://localhost:8080/h2-console`) | `false` |
 
-Como o banco é em memória, reiniciar a aplicação apaga também a cópia local dos alunos; ela volta a ser preenchida conforme novos eventos chegam.
+O driver e o dialeto são detectados pela URL. O Hibernate cria e atualiza as tabelas a partir das entidades (`spring.jpa.hibernate.ddl-auto=update`).
+
+No PostgreSQL os dados persistem entre reinícios, inclusive a cópia local dos alunos (`student_replica`).
 
 ## Como executar
 
-Precisa do RabbitMQ no ar (`docker compose up -d` na raiz do repositório).
+**Pelo compose, com o sistema completo** (na raiz do repositório):
 
 ```bash
+docker compose up -d --build
+```
+
+O serviço fica acessível pelo gateway em `http://localhost:8000/library-api`.
+
+**Local, fora de contêiner** (H2 em memória e o RabbitMQ do compose):
+
+```bash
+docker compose up -d rabbitmq
 ./mvnw spring-boot:run     # http://localhost:8080
 ```
 
-Na primeira execução, suba a `library-api` **antes** da `students-api`: é ela que cria a fila `library.students`. Depois disso a fila fica no RabbitMQ e a ordem deixa de importar.
+**Imagem Docker:** [`Dockerfile`](Dockerfile) multi-stage (build com JDK 21 e Maven Wrapper; runtime só com o JRE 21 e o jar, usuário sem privilégios). No pipeline a imagem é publicada em `ghcr.io/gustacassel/library-api`.
 
-Conexão com o broker (valores padrão iguais aos do `docker-compose.yml`, sobrescrevíveis por variável de ambiente):
+Variáveis do broker: `RABBITMQ_HOST`, `RABBITMQ_PORT`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD` (padrão `localhost:5672`, `library/library`).
 
-```properties
-spring.rabbitmq.host=${RABBITMQ_HOST:localhost}
-spring.rabbitmq.port=${RABBITMQ_PORT:5672}
-spring.rabbitmq.username=${RABBITMQ_USER:library}
-spring.rabbitmq.password=${RABBITMQ_PASSWORD:library}
-```
+## Observabilidade
+
+- **Health:** `/actuator/health` (inclui banco e RabbitMQ), `/actuator/health/liveness` e `/actuator/health/readiness`, usados pelo healthcheck do compose e pelas probes do Kubernetes.
+- **Tracing:** cada requisição HTTP e cada mensagem publicada ou consumida gera spans no Zipkin (`ZIPKIN_ENABLED=true`, `ZIPKIN_URL`). O contexto do trace viaja nos headers AMQP, então o trace continua no outro serviço.
+- **Logs:** com o perfil `loki` (`SPRING_PROFILES_ACTIVE=loki`, `LOKI_URL`) o [`logback-spring.xml`](src/main/resources/logback-spring.xml) envia os logs ao Loki com as etiquetas `app=library-api` e `level`, e com `traceId` e `spanId` em cada linha.
 
 ## Testes automatizados
 

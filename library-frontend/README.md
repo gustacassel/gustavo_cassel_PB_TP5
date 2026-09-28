@@ -1,6 +1,6 @@
 # Library Frontend - Biblioteca Aurora
 
-Interface web do sistema de biblioteca do Projeto de Bloco (*Engenharia de Softwares Escaláveis*). Consome as duas APIs do sistema: a [`library-api`](../library-api) (livros, empréstimos e cópia local dos alunos) e a [`students-api`](../students-api) (estudantes e cursos). A arquitetura geral está no [README da raiz](../README.md).
+Interface web do sistema de biblioteca do Projeto de Bloco (*Engenharia de Softwares Escaláveis*). Consome as duas APIs do sistema, a [`library-api`](../library-api) (livros, empréstimos e cópia local dos alunos) e a [`students-api`](../students-api) (estudantes e cursos), sempre através do [`api-gateway`](../api-gateway). A arquitetura geral está no [README da raiz](../README.md).
 
 ## Tecnologias
 
@@ -12,6 +12,8 @@ Interface web do sistema de biblioteca do Projeto de Bloco (*Engenharia de Softw
 | Bootstrap 5.3 + React Bootstrap | Layout, componentes e tema claro/escuro (`data-bs-theme`) |
 | Bootstrap Icons | Ícones |
 | SweetAlert2 | Formulários e confirmações em modal |
+| Vitest + Testing Library | Testes |
+| nginx | Servidor da imagem Docker |
 
 ## Telas
 
@@ -51,18 +53,25 @@ src/
 
 ## Configuração
 
-As URLs das APIs ficam em [`src/services/api-client.ts`](src/services/api-client.ts):
+As chamadas usam **caminhos relativos**, e o gateway encaminha cada prefixo para o serviço certo ([`src/services/api-client.ts`](src/services/api-client.ts)):
 
 ```ts
-export const LIBRARY_API_URL = "http://localhost:8080";
-export const STUDENTS_API_URL = "http://localhost:8081";
+export const LIBRARY_API_URL = "/library-api";
+export const STUDENTS_API_URL = "/students-api";
 ```
 
-As duas APIs liberam CORS (`@CrossOrigin`), então o front chama cada uma diretamente.
+- **No compose e no Kubernetes** o front-end é servido pelo próprio gateway (`http://localhost:8000`), então os caminhos relativos já chegam nele.
+- **Em desenvolvimento** o Vite repassa `/library-api` e `/students-api` para o gateway (`GATEWAY_URL`, padrão `http://localhost:8000`), configurado em [`vite.config.ts`](vite.config.ts).
+
+## Imagem Docker
+
+[`Dockerfile`](Dockerfile) multi-stage: build com `node:24-alpine` (`npm ci` e `npm run build`) e runtime com `nginx:1.29-alpine`. O [`nginx.conf`](nginx.conf) devolve o `index.html` para as rotas do React Router (links diretos como `/loans` funcionam) e expõe `/healthz` para o healthcheck do compose e as probes do Kubernetes. A imagem é publicada em `ghcr.io/gustacassel/library-frontend`.
 
 ## Como executar
 
-Com o RabbitMQ e as duas APIs no ar (veja o [README da raiz](../README.md#como-executar)):
+Pelo sistema completo (na raiz do repositório): `docker compose up -d --build` e acesse `http://localhost:8000`.
+
+Em desenvolvimento, com o gateway e as APIs no ar:
 
 ```bash
 npm install
@@ -72,6 +81,18 @@ npm run dev      # http://localhost:5173
 | Script | Descrição |
 |---|---|
 | `npm run dev` | Servidor de desenvolvimento com recarga automática |
+| `npm test` | Testes (Vitest) |
 | `npm run build` | Checagem de tipos (`tsc -b`) e build de produção em `dist/` |
 | `npm run lint` | ESLint |
 | `npm run preview` | Serve o build de produção localmente |
+
+## Testes
+
+16 testes com Vitest e Testing Library (ambiente jsdom), executados no CI a cada push:
+
+| Arquivo | O que cobre |
+|---|---|
+| `utils/format.test.ts` | Datas (sem deslocamento de fuso), conversão para input, escape de HTML, mensagem de erro |
+| `services/api-client.test.ts` | Prefixos do gateway, corpo JSON, resposta 204, mensagem de erro do back-end |
+| `hooks/useServiceStatus.test.ts` | Serviços online, offline e com erro do gateway |
+| `components/components.test.tsx` | `StatCard` (valor, dica, carregamento acessível) e `PageHeader` |

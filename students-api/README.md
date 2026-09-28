@@ -9,11 +9,13 @@ No **TP4** o serviço passou a se comunicar por eventos:
 - **publica** `student.created`, `student.updated` e `student.deleted` na exchange `students.events`, que a `library-api` usa para manter a própria cópia dos alunos;
 - **consome** os eventos de empréstimo da `library-api` (`library.events`) para saber quantos empréstimos ativos cada aluno tem, e **bloqueia a exclusão** de quem ainda tem livro em mãos.
 
+No **TP5** ganhou PostgreSQL, Actuator, imagem Docker, rastreamento distribuído (Zipkin) e logs centralizados (Loki), e passou a ser acessada pelo `api-gateway` na rota `/students-api/**`.
+
 ## Papel na arquitetura
 
 ```mermaid
 flowchart LR
-    FE[React Frontend<br/>:5173]
+    FE[api-gateway<br/>:8000]
 
     subgraph S["students-api :8081"]
         SC[Controllers<br/>Student / Course / History]
@@ -26,7 +28,7 @@ flowchart LR
         LIS --> SS
     end
 
-    FE -->|estudantes, cursos| SC
+    FE -->|/students-api/**| SC
     SR --> SDB[(H2 studentsdb)]
     PUB --> X1{{"exchange students.events<br/>(student.*)"}}
     Q2[["fila students.loans<br/>(loan.*)"]] --> LIS
@@ -43,7 +45,11 @@ flowchart LR
 | Spring Data JPA + Hibernate | Persistência e repositórios |
 | **Spring AMQP (`spring-boot-starter-amqp`)** | Publicação e consumo de eventos no RabbitMQ |
 | Bean Validation (Jakarta) | Validação dos payloads de entrada |
-| H2 Database | Banco `studentsdb`, separado do `librarydb` |
+| PostgreSQL 17 | Banco `studentsdb` no Docker e no Kubernetes |
+| H2 Database | Banco em memória para testes e execução local rápida |
+| Spring Boot Actuator | Health, liveness e readiness |
+| Micrometer Tracing + Zipkin | Rastreamento distribuído (inclusive através do RabbitMQ) |
+| Loki4j (Logback) | Envio dos logs para o Loki |
 | Lombok | Redução de boilerplate |
 | JUnit 5 + AssertJ + Mockito | Testes automatizados |
 
@@ -233,41 +239,65 @@ Erros de negócio e de validação respondem em JSON com o campo `message`, que 
 
 ```bash
 # 1. Cadastrar um estudante (a library-api recebe student.created)
-curl -X POST http://localhost:8081/api/students -H "Content-Type: application/json" \
+curl -X POST http://localhost:8000/students-api/api/students -H "Content-Type: application/json" \
   -d '{"name":"Carla Mendes","email":"carla@infnet.edu.br","enrollmentNumber":"2026010","status":"ATIVO","currentSemester":1,"courseId":1}'
 
 # 2. Conferir que ele chegou na cópia local da library-api
-curl http://localhost:8080/api/integration/students
+curl http://localhost:8000/library-api/api/integration/students
 
 # 3. Trancar a matrícula (a library-api passa a recusar empréstimos para ele)
-curl -X PUT http://localhost:8081/api/students/5 -H "Content-Type: application/json" \
+curl -X PUT http://localhost:8000/students-api/api/students/5 -H "Content-Type: application/json" \
   -d '{"name":"Carla Mendes","email":"carla@infnet.edu.br","enrollmentNumber":"2026010","status":"TRANCADO","currentSemester":1,"courseId":1}'
 
 # 4. Depois de um empréstimo na library-api, o aluno mostra activeLoans e não pode ser removido
-curl http://localhost:8081/api/students/1          # "activeLoans": 1
-curl -X DELETE http://localhost:8081/api/students/1  # 409
+curl http://localhost:8000/students-api/api/students/1          # "activeLoans": 1
+curl -X DELETE http://localhost:8000/students-api/api/students/1  # 409
 
 # 5. Histórico de mudanças do aluno
-curl http://localhost:8081/api/history/STUDENT/5
+curl http://localhost:8000/students-api/api/history/STUDENT/5
 ```
 
 ## Banco de dados
 
-H2 em memória (`jdbc:h2:mem:studentsdb`), configurado em [`application.properties`](src/main/resources/application.properties). Console web: `http://localhost:8081/h2-console` (usuário `sa`, senha em branco).
+O banco é definido por variáveis de ambiente, com o H2 em memória como padrão:
 
-Como o banco é em memória, o [`DataSeeder`](src/main/java/com/infnet/studentsapi/config/DataSeeder.java) carrega 3 cursos e 4 alunos de exemplo no start (desativado no perfil `test`). Esses cadastros passam pelo `StudentService`, então também geram `student.created`.
+| Variável | Padrão (local e testes) | Docker / Kubernetes |
+|---|---|---|
+| `DB_URL` | `jdbc:h2:mem:studentsdb` | `jdbc:postgresql://students-db:5432/studentsdb` |
+| `DB_USER` / `DB_PASSWORD` | `sa` / vazio | usuário e senha do PostgreSQL |
+| `SHOW_SQL` | `true` | `false` |
+| `H2_CONSOLE` | `true` (`http://localhost:8081/h2-console`) | `false` |
+
+O driver e o dialeto são detectados pela URL. O Hibernate cria e atualiza as tabelas a partir das entidades (`spring.jpa.hibernate.ddl-auto=update`).
+
+O [`DataSeeder`](src/main/java/com/infnet/studentsapi/config/DataSeeder.java) carrega 3 cursos e 4 alunos de exemplo quando o banco está vazio (desativado no perfil `test`). Esses cadastros passam pelo `StudentService`, então também geram `student.created`.
 
 ## Como executar
 
-Precisa do RabbitMQ no ar (`docker compose up -d` na raiz do repositório).
+**Pelo compose, com o sistema completo** (na raiz do repositório):
 
 ```bash
+docker compose up -d --build
+```
+
+O serviço fica acessível pelo gateway em `http://localhost:8000/students-api`.
+
+**Local, fora de contêiner** (H2 em memória e o RabbitMQ do compose):
+
+```bash
+docker compose up -d rabbitmq
 ./mvnw spring-boot:run     # http://localhost:8081
 ```
 
-O serviço sobe e funciona sozinho, sem a `library-api`: se ela estiver fora, os eventos de aluno ficam esperando na fila dela. Os eventos de empréstimo publicados enquanto este serviço estiver fora ficam na fila `students.loans` e são consumidos quando ele voltar.
+**Imagem Docker:** [`Dockerfile`](Dockerfile) multi-stage (build com JDK 21 e Maven Wrapper; runtime só com o JRE 21 e o jar, usuário sem privilégios). No pipeline a imagem é publicada em `ghcr.io/gustacassel/students-api`.
 
-A conexão com o broker usa as mesmas propriedades da `library-api` (`RABBITMQ_HOST`, `RABBITMQ_PORT`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD`, com padrão `localhost:5672` e `library/library`).
+Variáveis do broker: `RABBITMQ_HOST`, `RABBITMQ_PORT`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD` (padrão `localhost:5672`, `library/library`).
+
+## Observabilidade
+
+- **Health:** `/actuator/health` (inclui banco e RabbitMQ), `/actuator/health/liveness` e `/actuator/health/readiness`, usados pelo healthcheck do compose e pelas probes do Kubernetes.
+- **Tracing:** cada requisição HTTP e cada mensagem publicada ou consumida gera spans no Zipkin (`ZIPKIN_ENABLED=true`, `ZIPKIN_URL`). O contexto do trace viaja nos headers AMQP, então o trace continua no outro serviço.
+- **Logs:** com o perfil `loki` (`SPRING_PROFILES_ACTIVE=loki`, `LOKI_URL`) o [`logback-spring.xml`](src/main/resources/logback-spring.xml) envia os logs ao Loki com as etiquetas `app=students-api` e `level`, e com `traceId` e `spanId` em cada linha.
 
 ## Testes automatizados
 
